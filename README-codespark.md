@@ -22,6 +22,8 @@ Build the default sandbox image (`openclaw-sandbox:bookworm-slim`):
 
 ```bash
 ./scripts/sandbox-setup.sh
+docker tag openclaw-sandbox:bookworm-slim craftslab/openclaw-sandbox:bookworm-slim
+docker push craftslab/openclaw-sandbox:bookworm-slim
 ```
 
 ### Sandbox Common Image
@@ -30,6 +32,8 @@ Build the sandbox common image (`openclaw-sandbox-common:bookworm-slim`):
 
 ```bash
 ./scripts/sandbox-common-setup.sh
+docker tag openclaw-sandbox-common:bookworm-slim craftslab/openclaw-sandbox-common:bookworm-slim
+docker push craftslab/openclaw-sandbox-common:bookworm-slim
 ```
 
 ### Sandbox Browser Image
@@ -38,6 +42,8 @@ Build the sandbox browser image (`openclaw-sandbox-browser:bookworm-slim`):
 
 ```bash
 ./scripts/sandbox-browser-setup.sh
+docker tag openclaw-sandbox-browser:bookworm-slim craftslab/openclaw-sandbox-browser:bookworm-slim
+docker push craftslab/openclaw-sandbox-browser:bookworm-slim
 ```
 
 ## References
