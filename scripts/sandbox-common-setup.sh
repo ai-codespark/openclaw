@@ -27,6 +27,7 @@ docker build \
   --build-arg BREW_INSTALL_DIR="${BREW_INSTALL_DIR}" \
   - <<EOF
 FROM ${BASE_IMAGE}
+USER 0
 ENV DEBIAN_FRONTEND=noninteractive
 ARG INSTALL_PNPM=1
 ARG INSTALL_BUN=1
@@ -38,6 +39,8 @@ ENV HOMEBREW_PREFIX="\${BREW_INSTALL_DIR}"
 ENV HOMEBREW_CELLAR="\${BREW_INSTALL_DIR}/Cellar"
 ENV HOMEBREW_REPOSITORY="\${BREW_INSTALL_DIR}/Homebrew"
 ENV PATH="\${BUN_INSTALL_DIR}/bin:\${BREW_INSTALL_DIR}/bin:\${BREW_INSTALL_DIR}/sbin:\${PATH}"
+RUN mkdir -p /var/lib/apt/lists/partial \
+  && chmod 755 /var/lib/apt/lists /var/lib/apt/lists/partial
 RUN apt-get update \\
   && apt-get install -y --no-install-recommends ${PACKAGES} \\
   && rm -rf /var/lib/apt/lists/*
@@ -55,6 +58,7 @@ RUN if [ "\${INSTALL_BREW}" = "1" ]; then \\
   if [ ! -x "\${BREW_INSTALL_DIR}/bin/brew" ]; then echo "brew install failed"; exit 1; fi; \\
   ln -sf "\${BREW_INSTALL_DIR}/bin/brew" /usr/local/bin/brew; \\
 fi
+USER sandbox
 EOF
 
 cat <<NOTE
