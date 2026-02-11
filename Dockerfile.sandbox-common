@@ -1,4 +1,4 @@
-FROM openclaw-sandbox:bookworm-slim
+FROM craftslab/openclaw-sandbox:bookworm-slim
 USER 0
 ENV DEBIAN_FRONTEND=noninteractive
 ARG INSTALL_PNPM=1
