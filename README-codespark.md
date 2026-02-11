@@ -31,7 +31,13 @@ docker push craftslab/openclaw-sandbox:bookworm-slim
 Build the sandbox common image (`openclaw-sandbox-common:bookworm-slim`):
 
 ```bash
+# Using script (recommended for local development)
 ./scripts/sandbox-common-setup.sh
+docker tag openclaw-sandbox-common:bookworm-slim craftslab/openclaw-sandbox-common:bookworm-slim
+docker push craftslab/openclaw-sandbox-common:bookworm-slim
+
+# Or using Dockerfile directly (requires openclaw-sandbox:bookworm-slim base image)
+docker build -t openclaw-sandbox-common:bookworm-slim -f Dockerfile.sandbox-common .
 docker tag openclaw-sandbox-common:bookworm-slim craftslab/openclaw-sandbox-common:bookworm-slim
 docker push craftslab/openclaw-sandbox-common:bookworm-slim
 ```

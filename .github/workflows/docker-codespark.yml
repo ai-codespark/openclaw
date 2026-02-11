@@ -232,6 +232,7 @@ jobs:
   # Build amd64 sandbox-common image
   build-sandbox-common-amd64:
     runs-on: ubuntu-latest
+    needs: [create-sandbox-manifest]
     outputs:
       image-digest: ${{ steps.build.outputs.digest }}
     steps:
@@ -276,6 +277,7 @@ jobs:
   # Build arm64 sandbox-common image
   build-sandbox-common-arm64:
     runs-on: ubuntu-24.04-arm
+    needs: [create-sandbox-manifest]
     outputs:
       image-digest: ${{ steps.build.outputs.digest }}
     steps:
