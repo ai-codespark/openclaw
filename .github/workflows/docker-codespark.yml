@@ -1,0 +1,442 @@
+name: Docker CodeSpark
+
+on:
+  release:
+    types:
+      - created
+
+env:
+  DOCKERHUB_REPO: craftslab/openclaw
+
+jobs:
+  # Build amd64 main image
+  build-main-amd64:
+    runs-on: ubuntu-latest
+    outputs:
+      image-digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.AI_CODESPARK_DOCKERHUB_USER }}
+          password: ${{ secrets.AI_CODESPARK_DOCKERHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DOCKERHUB_REPO }}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{version}},suffix=-amd64
+            type=ref,event=branch,suffix=-amd64
+
+      - name: Build and push amd64 image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64
+          labels: ${{ steps.meta.outputs.labels }}
+          tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=registry,ref=${{ env.DOCKERHUB_REPO }}-cache:amd64
+          cache-to: type=registry,ref=${{ env.DOCKERHUB_REPO }}-cache:amd64,mode=max
+          provenance: false
+          push: true
+
+  # Build arm64 main image
+  build-main-arm64:
+    runs-on: ubuntu-24.04-arm
+    outputs:
+      image-digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.AI_CODESPARK_DOCKERHUB_USER }}
+          password: ${{ secrets.AI_CODESPARK_DOCKERHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DOCKERHUB_REPO }}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{version}},suffix=-arm64
+            type=ref,event=branch,suffix=-arm64
+
+      - name: Build and push arm64 image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/arm64
+          labels: ${{ steps.meta.outputs.labels }}
+          tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=registry,ref=${{ env.DOCKERHUB_REPO }}-cache:arm64
+          cache-to: type=registry,ref=${{ env.DOCKERHUB_REPO }}-cache:arm64,mode=max
+          provenance: false
+          push: true
+
+  # Create multi-platform main manifest
+  create-main-manifest:
+    runs-on: ubuntu-latest
+    needs: [build-main-amd64, build-main-arm64]
+    steps:
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.AI_CODESPARK_DOCKERHUB_USER }}
+          password: ${{ secrets.AI_CODESPARK_DOCKERHUB_TOKEN }}
+
+      - name: Extract metadata for manifest
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DOCKERHUB_REPO }}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=raw,value=local
+
+      - name: Create and push manifest
+        run: |
+          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            ${{ needs.build-main-amd64.outputs.image-digest }} \
+            ${{ needs.build-main-arm64.outputs.image-digest }}
+        env:
+          DOCKER_METADATA_OUTPUT_JSON: ${{ steps.meta.outputs.json }}
+
+  # Build amd64 sandbox image
+  build-sandbox-amd64:
+    runs-on: ubuntu-latest
+    outputs:
+      image-digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.AI_CODESPARK_DOCKERHUB_USER }}
+          password: ${{ secrets.AI_CODESPARK_DOCKERHUB_TOKEN }}
+
+      - name: Build sandbox setup script
+        run: chmod +x ./scripts/sandbox-setup.sh
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DOCKERHUB_REPO }}-sandbox
+          tags: |
+            type=raw,value=bookworm-slim
+            type=raw,value=bookworm-slim-amd64
+
+      - name: Build and push amd64 sandbox image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.sandbox
+          platforms: linux/amd64
+          labels: ${{ steps.meta.outputs.labels }}
+          tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=registry,ref=${{ env.DOCKERHUB_REPO }}-sandbox-cache:amd64
+          cache-to: type=registry,ref=${{ env.DOCKERHUB_REPO }}-sandbox-cache:amd64,mode=max
+          provenance: false
+          push: true
+
+  # Build arm64 sandbox image
+  build-sandbox-arm64:
+    runs-on: ubuntu-24.04-arm
+    outputs:
+      image-digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.AI_CODESPARK_DOCKERHUB_USER }}
+          password: ${{ secrets.AI_CODESPARK_DOCKERHUB_TOKEN }}
+
+      - name: Build sandbox setup script
+        run: chmod +x ./scripts/sandbox-setup.sh
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DOCKERHUB_REPO }}-sandbox
+          tags: |
+            type=raw,value=bookworm-slim-arm64
+
+      - name: Build and push arm64 sandbox image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.sandbox
+          platforms: linux/arm64
+          labels: ${{ steps.meta.outputs.labels }}
+          tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=registry,ref=${{ env.DOCKERHUB_REPO }}-sandbox-cache:arm64
+          cache-to: type=registry,ref=${{ env.DOCKERHUB_REPO }}-sandbox-cache:arm64,mode=max
+          provenance: false
+          push: true
+
+  # Create multi-platform sandbox manifest
+  create-sandbox-manifest:
+    runs-on: ubuntu-latest
+    needs: [build-sandbox-amd64, build-sandbox-arm64]
+    steps:
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.AI_CODESPARK_DOCKERHUB_USER }}
+          password: ${{ secrets.AI_CODESPARK_DOCKERHUB_TOKEN }}
+
+      - name: Create and push manifest
+        run: |
+          docker buildx imagetools create \
+            -t ${{ env.DOCKERHUB_REPO }}-sandbox:bookworm-slim \
+            ${{ needs.build-sandbox-amd64.outputs.image-digest }} \
+            ${{ needs.build-sandbox-arm64.outputs.image-digest }}
+
+  # Build amd64 sandbox-common image
+  build-sandbox-common-amd64:
+    runs-on: ubuntu-latest
+    needs: [create-sandbox-manifest]
+    outputs:
+      image-digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.AI_CODESPARK_DOCKERHUB_USER }}
+          password: ${{ secrets.AI_CODESPARK_DOCKERHUB_TOKEN }}
+
+      - name: Build sandbox-common setup script
+        run: chmod +x ./scripts/sandbox-common-setup.sh
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DOCKERHUB_REPO }}-sandbox-common
+          tags: |
+            type=raw,value=bookworm-slim
+            type=raw,value=bookworm-slim-amd64
+
+      - name: Build and push amd64 sandbox-common image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.sandbox-common
+          platforms: linux/amd64
+          labels: ${{ steps.meta.outputs.labels }}
+          tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=registry,ref=${{ env.DOCKERHUB_REPO }}-sandbox-common-cache:amd64
+          cache-to: type=registry,ref=${{ env.DOCKERHUB_REPO }}-sandbox-common-cache:amd64,mode=max
+          provenance: false
+          push: true
+
+  # Build arm64 sandbox-common image
+  build-sandbox-common-arm64:
+    runs-on: ubuntu-24.04-arm
+    needs: [create-sandbox-manifest]
+    outputs:
+      image-digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.AI_CODESPARK_DOCKERHUB_USER }}
+          password: ${{ secrets.AI_CODESPARK_DOCKERHUB_TOKEN }}
+
+      - name: Build sandbox-common setup script
+        run: chmod +x ./scripts/sandbox-common-setup.sh
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DOCKERHUB_REPO }}-sandbox-common
+          tags: |
+            type=raw,value=bookworm-slim-arm64
+
+      - name: Build and push arm64 sandbox-common image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.sandbox-common
+          platforms: linux/arm64
+          labels: ${{ steps.meta.outputs.labels }}
+          tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=registry,ref=${{ env.DOCKERHUB_REPO }}-sandbox-common-cache:arm64
+          cache-to: type=registry,ref=${{ env.DOCKERHUB_REPO }}-sandbox-common-cache:arm64,mode=max
+          provenance: false
+          push: true
+
+  # Create multi-platform sandbox-common manifest
+  create-sandbox-common-manifest:
+    runs-on: ubuntu-latest
+    needs: [build-sandbox-common-amd64, build-sandbox-common-arm64]
+    steps:
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.AI_CODESPARK_DOCKERHUB_USER }}
+          password: ${{ secrets.AI_CODESPARK_DOCKERHUB_TOKEN }}
+
+      - name: Create and push manifest
+        run: |
+          docker buildx imagetools create \
+            -t ${{ env.DOCKERHUB_REPO }}-sandbox-common:bookworm-slim \
+            ${{ needs.build-sandbox-common-amd64.outputs.image-digest }} \
+            ${{ needs.build-sandbox-common-arm64.outputs.image-digest }}
+
+  # Build amd64 sandbox-browser image
+  build-sandbox-browser-amd64:
+    runs-on: ubuntu-latest
+    outputs:
+      image-digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.AI_CODESPARK_DOCKERHUB_USER }}
+          password: ${{ secrets.AI_CODESPARK_DOCKERHUB_TOKEN }}
+
+      - name: Build sandbox-browser setup script
+        run: chmod +x ./scripts/sandbox-browser-setup.sh
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DOCKERHUB_REPO }}-sandbox-browser
+          tags: |
+            type=raw,value=bookworm-slim
+            type=raw,value=bookworm-slim-amd64
+
+      - name: Build and push amd64 sandbox-browser image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.sandbox-browser
+          platforms: linux/amd64
+          labels: ${{ steps.meta.outputs.labels }}
+          tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=registry,ref=${{ env.DOCKERHUB_REPO }}-sandbox-browser-cache:amd64
+          cache-to: type=registry,ref=${{ env.DOCKERHUB_REPO }}-sandbox-browser-cache:amd64,mode=max
+          provenance: false
+          push: true
+
+  # Build arm64 sandbox-browser image
+  build-sandbox-browser-arm64:
+    runs-on: ubuntu-24.04-arm
+    outputs:
+      image-digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.AI_CODESPARK_DOCKERHUB_USER }}
+          password: ${{ secrets.AI_CODESPARK_DOCKERHUB_TOKEN }}
+
+      - name: Build sandbox-browser setup script
+        run: chmod +x ./scripts/sandbox-browser-setup.sh
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DOCKERHUB_REPO }}-sandbox-browser
+          tags: |
+            type=raw,value=bookworm-slim-arm64
+
+      - name: Build and push arm64 sandbox-browser image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.sandbox-browser
+          platforms: linux/arm64
+          labels: ${{ steps.meta.outputs.labels }}
+          tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=registry,ref=${{ env.DOCKERHUB_REPO }}-sandbox-browser-cache:arm64
+          cache-to: type=registry,ref=${{ env.DOCKERHUB_REPO }}-sandbox-browser-cache:arm64,mode=max
+          provenance: false
+          push: true
+
+  # Create multi-platform sandbox-browser manifest
+  create-sandbox-browser-manifest:
+    runs-on: ubuntu-latest
+    needs: [build-sandbox-browser-amd64, build-sandbox-browser-arm64]
+    steps:
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.AI_CODESPARK_DOCKERHUB_USER }}
+          password: ${{ secrets.AI_CODESPARK_DOCKERHUB_TOKEN }}
+
+      - name: Create and push manifest
+        run: |
+          docker buildx imagetools create \
+            -t ${{ env.DOCKERHUB_REPO }}-sandbox-browser:bookworm-slim \
+            ${{ needs.build-sandbox-browser-amd64.outputs.image-digest }} \
+            ${{ needs.build-sandbox-browser-arm64.outputs.image-digest }}
