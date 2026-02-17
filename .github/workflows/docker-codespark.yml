@@ -266,6 +266,8 @@ jobs:
         with:
           context: .
           file: ./Dockerfile.sandbox-common
+          build-args: |
+            BASE_IMAGE=${{ env.DOCKERHUB_REPO }}-sandbox:bookworm-slim
           platforms: linux/amd64
           labels: ${{ steps.meta.outputs.labels }}
           tags: ${{ steps.meta.outputs.tags }}
@@ -310,6 +312,8 @@ jobs:
         with:
           context: .
           file: ./Dockerfile.sandbox-common
+          build-args: |
+            BASE_IMAGE=${{ env.DOCKERHUB_REPO }}-sandbox:bookworm-slim
           platforms: linux/arm64
           labels: ${{ steps.meta.outputs.labels }}
           tags: ${{ steps.meta.outputs.tags }}
