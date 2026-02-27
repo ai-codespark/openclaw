@@ -114,7 +114,31 @@ jobs:
       - name: Validate npm auth
         env:
           NODE_AUTH_TOKEN: ${{ secrets.SUPACLAW_NPM_TOKEN }}
-        run: npm whoami
+        run: |
+          set -euo pipefail
+          whoami="$(npm whoami)"
+          echo "Authenticated npm user: ${whoami}"
+          if [ "${whoami}" != "craftslab" ]; then
+            echo "::error::Expected npm user craftslab, got ${whoami}."
+            exit 1
+          fi
+
+      - name: Set package name for Supaclaw publish
+        run: |
+          set -euo pipefail
+          npm pkg set name='@supaclaw/openclaw'
+          echo "Package name for publish: $(node -p \"require('./package.json').name\")"
+
+      - name: Check npm package visibility and access
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.SUPACLAW_NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          if npm view @supaclaw/openclaw version >/dev/null 2>&1; then
+            echo "@supaclaw/openclaw already exists on npm and is visible to current auth."
+          else
+            echo "@supaclaw/openclaw not visible yet or first publish; continuing to npm publish."
+          fi
 
       - name: Publish to npmjs (@supaclaw via openclaw team token)
         env:
