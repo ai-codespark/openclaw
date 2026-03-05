@@ -76,6 +76,9 @@ jobs:
           echo "Repository URL for build:"
           npm pkg get repository.url
 
+      - name: Sync plugin versions
+        run: pnpm plugins:sync
+
       - name: Build dist
         run: pnpm build
 
