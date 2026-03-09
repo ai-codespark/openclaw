@@ -55,11 +55,8 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           check-latest: true
 
-      - name: Setup pnpm + cache store
-        uses: ./.github/actions/setup-pnpm-store-cache
-        with:
-          pnpm-version: ${{ env.PNPM_VERSION }}
-          cache-key-suffix: windows-node2212
+      - name: Install pnpm
+        run: npm install --global "pnpm@${PNPM_VERSION}"
 
       - name: Runtime versions
         run: |
