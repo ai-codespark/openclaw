@@ -1,0 +1,183 @@
+name: Supaclaw Windows
+
+on:
+  release:
+    types:
+      - created
+
+concurrency:
+    group: supaclaw-windows-${{ github.event.release.tag_name || github.event.inputs.tag_name || github.ref }}
+    cancel-in-progress: true
+
+permissions:
+    contents: write
+
+jobs:
+    build-and-release:
+        if: github.repository == 'supaclaw/openclaw'
+        runs-on: windows-2022
+        env:
+            CI: true
+            NODE_VERSION: 22.12.0
+            PNPM_VERSION: 10.23.0
+        defaults:
+            run:
+                shell: bash
+        steps:
+            - name: Checkout
+                uses: actions/checkout@v4
+                with:
+                    submodules: false
+
+            - name: Resolve release tag
+                id: release
+                run: |
+                    set -euo pipefail
+                    tag="${{ github.event.release.tag_name || github.event.inputs.tag_name }}"
+                    if [[ -z "$tag" ]]; then
+                        echo "::error::A release tag is required."
+                        exit 1
+                    fi
+
+                    safe_tag="$(printf '%s' "$tag" | tr '/: ' '---' | tr -cd '[:alnum:]._-')"
+                    if [[ -z "$safe_tag" ]]; then
+                        echo "::error::Could not derive a safe artifact suffix from tag '$tag'."
+                        exit 1
+                    fi
+
+                    echo "tag=$tag" >> "$GITHUB_OUTPUT"
+                    echo "safe_tag=$safe_tag" >> "$GITHUB_OUTPUT"
+                    echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+
+            - name: Setup Node.js
+                uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+                with:
+                    node-version: ${{ env.NODE_VERSION }}
+                    check-latest: true
+
+            - name: Setup pnpm + cache store
+                uses: ./.github/actions/setup-pnpm-store-cache
+                with:
+                    pnpm-version: ${{ env.PNPM_VERSION }}
+                    cache-key-suffix: windows-node2212
+
+            - name: Runtime versions
+                run: |
+                    node -v
+                    npm -v
+                    pnpm -v
+
+            - name: Capture node path
+                run: echo "NODE_BIN=$(dirname \"$(node -p \"process.execPath\")\")" >> "$GITHUB_ENV"
+
+            - name: Install dependencies
+                run: |
+                    export PATH="$NODE_BIN:$PATH"
+                    pnpm install --frozen-lockfile --ignore-scripts=false --config.engine-strict=false --config.enable-pre-post-scripts=true
+
+            - name: Sync plugin versions
+                run: pnpm plugins:sync
+
+            - name: Build dist
+                run: pnpm build
+
+            - name: Check release contents
+                run: pnpm release:check
+
+            - name: Pack npm tarball
+                run: |
+                    mkdir -p artifacts
+                    npm pack --pack-destination artifacts
+
+            - name: Stage Windows release bundle
+                shell: pwsh
+                env:
+                    SAFE_TAG: ${{ steps.release.outputs.safe_tag }}
+                run: |
+                    $ErrorActionPreference = 'Stop'
+
+                    $artifactsDir = Join-Path $env:GITHUB_WORKSPACE 'artifacts'
+                    $stageRoot = Join-Path $env:RUNNER_TEMP 'supaclaw-windows-release'
+                    $packageStage = Join-Path $stageRoot 'package-stage'
+                    $portableRoot = Join-Path $stageRoot 'portable'
+
+                    Remove-Item -Recurse -Force $stageRoot -ErrorAction SilentlyContinue
+                    New-Item -ItemType Directory -Path $stageRoot, $packageStage, $portableRoot | Out-Null
+
+                    $tgz = Get-ChildItem -Path $artifactsDir -Filter '*.tgz' | Select-Object -First 1
+                    if (-not $tgz) {
+                        throw 'No npm tarball was created in artifacts/.'
+                    }
+
+                    tar -xzf $tgz.FullName -C $packageStage
+
+                    $packageDir = Join-Path $packageStage 'package'
+                    if (-not (Test-Path $packageDir)) {
+                        throw "Expected extracted package directory at $packageDir"
+                    }
+
+                    Push-Location $packageDir
+                    try {
+                        npm install --omit=dev --ignore-scripts=false --config.engine-strict=false
+                    }
+                    finally {
+                        Pop-Location
+                    }
+
+                    robocopy $packageDir $portableRoot /E /NFL /NDL /NJH /NJS /NC /NS | Out-Null
+                    if ($LASTEXITCODE -gt 7) {
+                        throw "robocopy failed with exit code $LASTEXITCODE"
+                    }
+
+                    $nodeExe = node -p "process.execPath"
+                    Copy-Item $nodeExe (Join-Path $portableRoot 'node.exe') -Force
+
+                    @'
+                    @echo off
+                    setlocal
+                    set "SCRIPT_DIR=%~dp0"
+                    "%SCRIPT_DIR%node.exe" "%SCRIPT_DIR%openclaw.mjs" %*
+                    '@ | Set-Content -Path (Join-Path $portableRoot 'openclaw.cmd') -Encoding ascii
+
+                    $portableZip = Join-Path $artifactsDir ("openclaw-" + $env:SAFE_TAG + "-windows-x64-portable.zip")
+                    if (Test-Path $portableZip) {
+                        Remove-Item $portableZip -Force
+                    }
+                    Compress-Archive -Path (Join-Path $portableRoot '*') -DestinationPath $portableZip -Force
+
+            - name: Build standalone Windows executable
+                shell: pwsh
+                env:
+                    SAFE_TAG: ${{ steps.release.outputs.safe_tag }}
+                run: |
+                    $ErrorActionPreference = 'Stop'
+
+                    $packageDir = Join-Path $env:RUNNER_TEMP 'supaclaw-windows-release\package-stage\package'
+                    if (-not (Test-Path $packageDir)) {
+                        throw "Expected package directory at $packageDir"
+                    }
+
+                    $outputExe = Join-Path (Join-Path $env:GITHUB_WORKSPACE 'artifacts') ("openclaw-" + $env:SAFE_TAG + "-windows-x64.exe")
+
+                    npm exec --yes caxa@3.0.1 -- --input "$packageDir" --output "$outputExe" --uncompression-message "Preparing OpenClaw for first launch on Windows 10 or newer..." -- "{{caxa}}/node_modules/.bin/node" "{{caxa}}/openclaw.mjs"
+
+            - name: Upload workflow artifacts
+                uses: actions/upload-artifact@v4
+                with:
+                    name: supaclaw-windows-${{ steps.release.outputs.safe_tag }}-${{ github.run_id }}
+                    path: |
+                        artifacts/*.exe
+                        artifacts/*.zip
+                    retention-days: 7
+
+            - name: Validate release exists
+                env:
+                    GH_TOKEN: ${{ secrets.SUPACLAW_TOKEN }}
+                    RELEASE_TAG: ${{ steps.release.outputs.tag }}
+                run: gh release view "$RELEASE_TAG"
+
+            - name: Upload Windows assets to GitHub release
+                env:
+                    GH_TOKEN: ${{ secrets.SUPACLAW_TOKEN }}
+                    RELEASE_TAG: ${{ steps.release.outputs.tag }}
+                run: gh release upload "$RELEASE_TAG" artifacts/*.exe artifacts/*.zip --clobber

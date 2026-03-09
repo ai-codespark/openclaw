@@ -1,0 +1,163 @@
+name: Supaclaw NPM
+
+on:
+  release:
+    types:
+      - created
+
+concurrency:
+  group: supaclaw-npm-${{ github.event.release.tag_name || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  build:
+    if: github.repository == 'supaclaw/openclaw'
+    runs-on: ${{ matrix.runs_on }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - os_name: ubuntu
+            runs_on: ubuntu-latest
+          - os_name: windows
+            runs_on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Setup Node environment
+        if: matrix.os_name == 'ubuntu'
+        uses: ./.github/actions/setup-node-env
+        with:
+          install-bun: "false"
+
+      - name: Setup Node.js (Windows)
+        if: matrix.os_name == 'windows'
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22.x
+          check-latest: true
+
+      - name: Setup pnpm + cache store (Windows)
+        if: matrix.os_name == 'windows'
+        uses: ./.github/actions/setup-pnpm-store-cache
+        with:
+          pnpm-version: "10.23.0"
+          cache-key-suffix: "node22"
+
+      - name: Capture node path (Windows)
+        if: matrix.os_name == 'windows'
+        run: echo "NODE_BIN=$(dirname \"$(node -p \"process.execPath\")\")" >> "$GITHUB_ENV"
+
+      - name: Install dependencies (Windows)
+        if: matrix.os_name == 'windows'
+        env:
+          CI: true
+        run: |
+          export PATH="$NODE_BIN:$PATH"
+          pnpm install --frozen-lockfile --ignore-scripts=false --config.engine-strict=false --config.enable-pre-post-scripts=true
+
+      - name: Set package metadata before build
+        run: |
+          set -euo pipefail
+          npm pkg set name='@supaclaw/openclaw'
+          npm pkg set repository.url='https://github.com/supaclaw/openclaw'
+          echo "Package name for build:"
+          npm pkg get name
+          echo "Repository URL for build:"
+          npm pkg get repository.url
+
+      - name: Sync plugin versions
+        run: pnpm plugins:sync
+
+      - name: Build dist
+        run: pnpm build
+
+      - name: Check release contents
+        run: pnpm release:check
+
+      - name: Pack npm tarball
+        run: |
+          mkdir -p artifacts
+          npm pack --pack-destination artifacts
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: supaclaw-npm-${{ matrix.os_name }}-${{ github.run_id }}
+          path: |
+            dist/
+            artifacts/*.tgz
+          retention-days: 7
+
+  publish:
+    if: github.repository == 'supaclaw/openclaw'
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Setup Node environment
+        uses: ./.github/actions/setup-node-env
+        with:
+          install-bun: "false"
+
+      - name: Configure npmjs auth
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.SUPACLAW_NPM_TOKEN }}
+        run: |
+          cat > "$HOME/.npmrc" <<EOF
+          registry=https://registry.npmjs.org/
+          //registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}
+          always-auth=true
+          EOF
+
+      - name: Validate npm auth
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.SUPACLAW_NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          whoami="$(npm whoami)"
+          echo "Authenticated npm user: ${whoami}"
+          if [ "${whoami}" != "craftslab" ]; then
+            echo "::error::Expected npm user craftslab, got ${whoami}."
+            exit 1
+          fi
+
+      - name: Set package metadata for Supaclaw publish
+        run: |
+          set -euo pipefail
+          npm pkg set name='@supaclaw/openclaw'
+          npm pkg set repository.url='https://github.com/supaclaw/openclaw'
+          echo "Package name for publish:"
+          npm pkg get name
+          echo "Repository URL for publish:"
+          npm pkg get repository.url
+
+      - name: Check npm package visibility and access
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.SUPACLAW_NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          if npm view @supaclaw/openclaw version >/dev/null 2>&1; then
+            echo "@supaclaw/openclaw already exists on npm and is visible to current auth."
+          else
+            echo "@supaclaw/openclaw not visible yet or first publish; continuing to npm publish."
+          fi
+
+      - name: Publish to npmjs (@supaclaw via openclaw team token)
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.SUPACLAW_NPM_TOKEN }}
+        run: npm publish --access public --provenance
