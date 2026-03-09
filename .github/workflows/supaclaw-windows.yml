@@ -6,7 +6,7 @@ on:
       - created
 
 concurrency:
-    group: supaclaw-windows-${{ github.event.release.tag_name || github.event.inputs.tag_name || github.ref }}
+    group: supaclaw-windows-${{ github.event.release.tag_name || github.ref }}
     cancel-in-progress: true
 
 permissions:
@@ -33,7 +33,7 @@ jobs:
                 id: release
                 run: |
                     set -euo pipefail
-                    tag="${{ github.event.release.tag_name || github.event.inputs.tag_name }}"
+                    tag="${{ github.event.release.tag_name }}"
                     if [[ -z "$tag" ]]; then
                         echo "::error::A release tag is required."
                         exit 1
