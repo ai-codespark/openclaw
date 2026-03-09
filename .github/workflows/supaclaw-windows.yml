@@ -13,9 +13,9 @@ permissions:
     contents: write
 
 jobs:
-    build-and-release:
+    build:
         if: github.repository == 'supaclaw/openclaw'
-        runs-on: windows-2022
+        runs-on: windows-latest
         env:
             CI: true
             NODE_VERSION: 22.12.0
