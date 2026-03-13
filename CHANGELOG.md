@@ -8,26 +8,26 @@ Docs: https://docs.openclaw.ai
 
 ### Changes
 
-- Agents/subagents: add `sessions_yield` so orchestrators can end the current turn immediately, skip queued tool work, and carry a hidden follow-up payload into the next session turn. (#36537) thanks @jriff
-- Docs/Kubernetes: Add a starter K8s install path with raw manifests, Kind setup, and deployment docs. Thanks @sallyom @dzianisv @egkristi
 - Control UI/dashboard-v2: refresh the gateway dashboard with modular overview, chat, config, agent, and session views, plus a command palette, mobile bottom tabs, and richer chat tools like slash commands, search, export, and pinned messages. (#41503) Thanks @BunsDev.
-- Models/plugins: move Ollama, vLLM, and SGLang onto the provider-plugin architecture, with provider-owned onboarding, discovery, model-picker setup, and post-selection hooks so core provider wiring is more modular.
 - OpenAI/GPT-5.4 fast mode: add configurable session-level fast toggles across `/fast`, TUI, Control UI, and ACP, with per-model config defaults and OpenAI/Codex request shaping.
 - Anthropic/Claude fast mode: map the shared `/fast` toggle and `params.fastMode` to direct Anthropic API-key `service_tier` requests, with live verification for both Anthropic and OpenAI fast-mode tiers.
+- Models/plugins: move Ollama, vLLM, and SGLang onto the provider-plugin architecture, with provider-owned onboarding, discovery, model-picker setup, and post-selection hooks so core provider wiring is more modular.
+- Docs/Kubernetes: Add a starter K8s install path with raw manifests, Kind setup, and deployment docs. Thanks @sallyom @dzianisv @egkristi
+- Agents/subagents: add `sessions_yield` so orchestrators can end the current turn immediately, skip queued tool work, and carry a hidden follow-up payload into the next session turn. (#36537) thanks @jriff
 
 ### Fixes
 
-- Models/OpenAI Codex Spark: keep `gpt-5.3-codex-spark` working on the `openai-codex/*` path via resolver fallbacks and clearer Codex-only handling, while continuing to suppress the stale direct `openai/*` Spark row that OpenAI rejects live.
-- Ollama/Kimi Cloud: apply the Moonshot Kimi payload compatibility wrapper to Ollama-hosted Kimi models like `kimi-k2.5:cloud`, so tool routing no longer breaks when thinking is enabled. (#41519) Thanks @vincentkoc.
-- Models/Kimi Coding: send the built-in `User-Agent: claude-code/0.1.0` header by default for `kimi-coding` while still allowing explicit provider headers to override it, so Kimi Code subscription auth can work without a local header-injection proxy. (#30099) Thanks @Amineelfarssi and @vincentkoc.
 - Security/device pairing: switch `/pair` and `openclaw qr` setup codes to short-lived bootstrap tokens so the next release no longer embeds shared gateway credentials in chat or QR pairing payloads. Thanks @lintsinghua.
 - Security/plugins: disable implicit workspace plugin auto-load so cloned repositories cannot execute workspace plugin code without an explicit trust decision. (`GHSA-99qw-6mr3-36qr`)(#44174) Thanks @lintsinghua and @vincentkoc.
-- Moonshot CN API: respect explicit `baseUrl` (api.moonshot.cn) in implicit provider resolution so platform.moonshot.cn API keys authenticate correctly instead of returning HTTP 401. (#33637) Thanks @chengzhichao-xydt.
-- Kimi Coding/provider config: respect explicit `models.providers["kimi-coding"].baseUrl` when resolving the implicit provider so custom Kimi Coding endpoints no longer get overwritten by the built-in default. (#36353) Thanks @2233admin.
 - Models/Kimi Coding: send `anthropic-messages` tools in native Anthropic format again so `kimi-coding` stops degrading tool calls into XML/plain-text pseudo invocations instead of real `tool_use` blocks. (#38669, #39907, #40552) Thanks @opriz.
 - TUI/chat log: reuse the active assistant message component for the same streaming run so `openclaw tui` no longer renders duplicate assistant replies. (#35364) Thanks @lisitan.
 - Telegram/model picker: make inline model button selections persist the chosen session model correctly, clear overrides when selecting the configured default, and include effective fallback models in `/models` button validation. (#40105) Thanks @avirweb.
 - Cron/proactive delivery: keep isolated direct cron sends out of the write-ahead resend queue so transient-send retries do not replay duplicate proactive messages after restart. (#40646) Thanks @openperf and @vincentkoc.
+- Models/Kimi Coding: send the built-in `User-Agent: claude-code/0.1.0` header by default for `kimi-coding` while still allowing explicit provider headers to override it, so Kimi Code subscription auth can work without a local header-injection proxy. (#30099) Thanks @Amineelfarssi and @vincentkoc.
+- Models/OpenAI Codex Spark: keep `gpt-5.3-codex-spark` working on the `openai-codex/*` path via resolver fallbacks and clearer Codex-only handling, while continuing to suppress the stale direct `openai/*` Spark row that OpenAI rejects live.
+- Ollama/Kimi Cloud: apply the Moonshot Kimi payload compatibility wrapper to Ollama-hosted Kimi models like `kimi-k2.5:cloud`, so tool routing no longer breaks when thinking is enabled. (#41519) Thanks @vincentkoc.
+- Moonshot CN API: respect explicit `baseUrl` (api.moonshot.cn) in implicit provider resolution so platform.moonshot.cn API keys authenticate correctly instead of returning HTTP 401. (#33637) Thanks @chengzhichao-xydt.
+- Kimi Coding/provider config: respect explicit `models.providers["kimi-coding"].baseUrl` when resolving the implicit provider so custom Kimi Coding endpoints no longer get overwritten by the built-in default. (#36353) Thanks @2233admin.
 - Gateway/main-session routing: keep TUI and other `mode:UI` main-session sends on the internal surface when `deliver` is enabled, so replies no longer inherit the session's persisted Telegram/WhatsApp route. (#43918) Thanks @obviyus.
 - BlueBubbles/self-chat echo dedupe: drop reflected duplicate webhook copies only when a matching `fromMe` event was just seen for the same chat, body, and timestamp, preventing self-chat loops without broad webhook suppression. Related to #32166. (#38442) Thanks @vincentkoc.
 - iMessage/self-chat echo dedupe: drop reflected duplicate copies only when a matching `is_from_me` event was just seen for the same chat, text, and `created_at`, preventing self-chat loops without broad text-only suppression. Related to #32166. (#38440) Thanks @vincentkoc.
@@ -53,6 +53,7 @@ Docs: https://docs.openclaw.ai
 - Security/agent tools: mark `nodes` as explicitly owner-only and document/test that `canvas` remains a shared trusted-operator surface unless a real boundary bypass exists.
 - Security/exec approvals: fail closed for Ruby approval flows that use `-r`, `--require`, or `-I` so approval-backed commands no longer bind only the main script while extra local code-loading flags remain outside the reviewed file snapshot.
 - Security/device pairing: cap issued and verified device-token scopes to each paired device's approved scope baseline so stale or overbroad tokens cannot exceed approved access. (`GHSA-2pwv-x786-56f8`)(#43686) Thanks @tdjackey and @vincentkoc.
+- Docs/onboarding: align the legacy wizard reference and `openclaw onboard` command docs with the Ollama onboarding flow so all onboarding reference paths now document `--auth-choice ollama`, Cloud + Local mode, and non-interactive usage. (#43473) Thanks @BruceMacD.
 - Models/secrets: enforce source-managed SecretRef markers in generated `models.json` so runtime-resolved provider secrets are not persisted when runtime projection is skipped. (#43759) Thanks @joshavant.
 - Security/WebSocket preauth: shorten unauthenticated handshake retention and reject oversized pre-auth frames before application-layer parsing to reduce pre-pairing exposure on unsupported public deployments. (`GHSA-jv4g-m82p-2j93`)(#44089) (`GHSA-xwx2-ppv2-wx98`)(#44089) Thanks @ez-lbz and @vincentkoc.
 - Security/proxy attachments: restore the shared media-store size cap for persisted browser proxy files so oversized payloads are rejected instead of overriding the intended 5 MB limit. (`GHSA-6rph-mmhp-h7h9`)(#43684) Thanks @tdjackey and @vincentkoc.
